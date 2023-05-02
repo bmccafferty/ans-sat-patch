@@ -1,0 +1,87 @@
+---
+- name: Patch Host via Satellite
+  hosts: localhost
+  gather_facts: no
+  tasks:
+  # Ansible Vault Secured vars which has sat auth details stored
+  - ansible.builtin.include_vars: ../vars/sat.yml
+
+  # Use Satellite Collection to list all errata for host pre patching
+  - name: List Errata
+    redhat.satellite.host_errata_info:
+      server_url: "{{ sat_host }}"
+      username: "{{ sat_user }}"
+      password: "{{ sat_pass }}"
+      validate_certs: false
+      host: "{{ host_to_patch }}"
+    register: host_errata
+
+  - name: Print Patch Job Data
+    ansible.builtin.debug:
+      var: host_errata
+
+  - name: Get Satellite host name/ID from API
+    ansible.builtin.uri:
+      url: "{{ sat_host  }}/api/hosts/?search=name~{{ host_to_patch }}&thin=yes"
+      status_code: 200
+      method: GET
+      user: "{{ sat_user }}"
+      password: "{{ sat_pass }}"
+      force_basic_auth: yes
+      return_content: yes
+      headers:
+         Content-Type: "application/json"
+    no_log: true
+    register: satellite_host
+
+# Check only single result from satellite API.
+  - name: Check how many results returned from satellite API
+    ansible.builtin.set_fact:
+      sat_no_found: "{{ satellite_host.json.subtotal }}"
+
+  - ansible.builtin.debug:
+      msg: Satellite has found {{ sat_no_found }} results
+    when: sat_no_found is defined
+
+  - name: Check how many results from satellite API.
+    ansible.builtin.fail: msg="Satellite has found {{ sat_no_found }} results, It must return 1 only to continue."
+    when: sat_no_found != '1'
+
+# Set the Satellite host ID
+  - name: Set Satellite host ID from API
+    ansible.builtin.set_fact:
+      satellite_id: "{{ satellite_host.json.results[0].id }}"
+
+# Patch the hosts first, should be registered with satellite already
+  - name: Patching with Satellite API
+    ansible.builtin.uri:
+      url: "{{ sat_host }}/api/hosts/{{ satellite_id }}/packages/upgrade_all"
+      status_code: 202
+      method: PUT
+      user: "{{ sat_user }}"
+      password: "{{ sat_pass }}"
+      force_basic_auth: yes
+      return_content: yes
+      headers:
+         Content-Type: "application/json"
+    no_log: true
+    register: upgrade
+
+# Check the returned task status
+  - name: Check patching task status
+    ansible.builtin.uri:
+      url: "{{ sat_host }}/foreman_tasks/api/tasks/{{ upgrade.json.id }}"
+      status_code: 200
+      method: GET
+      user: "{{ sat_user }}"
+      password: "{{ sat_pass }}"
+      force_basic_auth: yes
+      return_content: yes
+      headers:
+        Content-Type: "application/json"
+    no_log: true
+    register: upgrade_task
+    until: upgrade_task.json.result != "pending"
+    retries: 50
+    delay: 30
+    failed_when: upgrade_task.json.result != "success"
