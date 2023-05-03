@@ -1,0 +1,23 @@
+---
+- name: Add Host To Satellite
+  hosts: localhost
+  gather_facts: no
+  tasks:
+  - include_vars: ../vars/sat.yml
+  - include_vars: ../vars/hosts.yml
+
+  - name: Run Patch Job
+    redhat.satellite.host:
+      name: "{{ item.hostname }}"
+      ip: "{{ item.ip }}"
+      organization: bdm.scot
+      location: lab
+      architecture: x86_64
+      managed: false
+      state: present
+      server_url: "{{ sat_host }}"
+      username: "{{ sat_user }}"
+      password: "{{ sat_pass }}"
+      validate_certs: false
+    loop: "{{ hosts }}"
+
