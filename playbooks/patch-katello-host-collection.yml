@@ -1,0 +1,76 @@
+---
+- name: Patch Host via Satellite
+  hosts: localhost
+  gather_facts: no
+  tasks:
+  # Ansible Vault Secured vars which has sat auth details stored
+  - ansible.builtin.include_vars: ../vars/sat.yml
+
+  - name: Get Satellite host name/ID from API
+    ansible.builtin.uri:
+      url: "{{ sat_host  }}/api/hosts/?thin=true&per_page=10000&search=host_collection={{ collection_to_patch }}"
+      status_code: 200
+      method: GET
+      user: "{{ sat_user }}"
+      password: "{{ sat_pass }}"
+      force_basic_auth: yes
+      return_content: yes
+      headers:
+         Content-Type: "application/json"
+    no_log: true
+    register: satellite_collection
+
+# Check result from satellite API.
+  - name: Check how many results returned from satellite API
+    ansible.builtin.set_fact:
+      sat_no_found: "{{ satellite_collection.json.subtotal }}"
+
+  - ansible.builtin.debug:
+      msg: Satellite has found {{ sat_no_found }} hosts to be patched in this host collection
+    when: sat_no_found is defined
+
+  - name: Fail if collection is empty (no hosts)
+    ansible.builtin.fail: msg="Satellite has found {{ sat_no_found }} results, It must return at least 1 or more to continue."
+    when: sat_no_found == '0'
+
+# Pull Loop of results
+  - name: Display IDs of Hosts from Host Collection
+    ansible.builtin.debug:
+      msg: "{{ item.id }}"
+    loop: "{{ satellite_collection.json.results }}"
+
+# Set the Satellite host ID
+  - name: Set Satellite host ID from API
+    ansible.builtin.set_fact:
+      satellite_id: "{{ item.id }}"
+    loop: "{{ satellite_collection.json.results }}"
+
+# Pull Loop of results
+  - name: Display IDs of Hosts from Host Collection
+    ansible.builtin.debug:
+      msg: "{{ satellite_id }}"
+
+# Patch the hosts within the collection
+  - name: Patching with Satellite API
+    ansible.builtin.uri:
+      url: "{{ sat_host }}/api/hosts/{{ item.id }}/packages/upgrade_all"
+      status_code: 202
+      method: PUT
+      user: "{{ sat_user }}"
+      password: "{{ sat_pass }}"
+      force_basic_auth: yes
+      return_content: yes
+      headers:
+         Content-Type: "application/json"
+    no_log: true
+    register: upgrade
+    loop: "{{ satellite_collection.json.results }}" 
+
+# Create list of patch task IDs URLs
+  - name: Set URL to check
+    ansible.builtin.debug:
+      msg: "{{ sat_host }}/foreman_tasks/tasks/{{ item.json.id }}"
+    loop: "{{ upgrade.results }}"
+    loop_control:
+      label: 'id'
+
