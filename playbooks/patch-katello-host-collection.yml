@@ -39,17 +39,6 @@
       msg: "{{ item.id }}"
     loop: "{{ satellite_collection.json.results }}"
 
-# Set the Satellite host ID
-  - name: Set Satellite host ID from API
-    ansible.builtin.set_fact:
-      satellite_id: "{{ item.id }}"
-    loop: "{{ satellite_collection.json.results }}"
-
-# Pull Loop of results
-  - name: Display IDs of Hosts from Host Collection
-    ansible.builtin.debug:
-      msg: "{{ satellite_id }}"
-
 # Patch the hosts within the collection
   - name: Patching with Satellite API
     ansible.builtin.uri:
