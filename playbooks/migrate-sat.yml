@@ -1,0 +1,28 @@
+---
+- name: Remove Sub from Old Satellite Server and Register to New Satellite Server
+  hosts: all
+  gather_facts: no
+
+  tasks:
+  - name: Unregister host from old satellite server
+    redhat_subscription:
+      state: absent
+
+  - name: Remove old ketello package for old Satellite certs
+    yum:
+      name: 'katello-ca-consumer*'
+      state: absent
+
+  - name: Install new katello package for new Satellite
+    yum:
+      name: https://{{ new_sat_server }}/pub/katello-ca-consumer-latest.noarch.rpm
+      disable_gpg_check: true
+      validate_certs: false
+      state: present
+
+  - name: Register host to satellite server
+    redhat_subscription:
+      activationkey: {{ sat_activationkey }}
+      org_id: {{ sat_orgid }}
+      state: present
+      
